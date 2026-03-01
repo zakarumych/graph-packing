@@ -1,21 +1,18 @@
 use core::cmp::Ordering;
 
-/// Packs objects on a 1D line with minimal possible bin length.
+/// Packs objects on a 1D line while respecting incomparability constraints.
 ///
 /// Pairs that are `None` (incomparable) are placed without overlap.
 /// Comparable pairs (`Some(_)`) are allowed to overlap.
 ///
 /// This implementation is exact: it explores all left-tight placements and
-/// returns one with the smallest maximal end position.
+/// places each item (in input order) at the earliest valid start position.
 ///
 /// Complexity (`n = sizes.len()`):
-/// - Time: exact backtracking over placements.
-///   - Worst-case upper bound: `O((n!)^2 * n^3)` (`n!` placement orders and up
-///     to `n!` candidate-start combinations, with `O(n^3)` work per node).
-///   - Typical fully-comparable/fully-incomparable cases are still factorial:
-///     `Θ(n! * n^2)` (one effective start candidate per step).
-///   - Plus `O(n^2)` preprocessing for incomparability.
-/// - Space: `O(n^2)` for the incomparability matrix and `O(n)` recursion/state.
+/// - Time: `O(n^2 log n)` (`O(n^2)` incomparability preprocessing plus, for each
+///   item, sorting already-placed incomparable intervals to find the first gap).
+/// - Space: `O(n^2)` for the incomparability matrix and `O(n)` temporary interval
+///   storage.
 pub fn pack_partial_order<F>(sizes: &[u64], mut partial_order: F) -> Vec<u64>
 where
     F: FnMut(usize, usize) -> Option<Ordering>,
@@ -31,109 +28,40 @@ where
         }
     }
 
-    let mut best_positions = vec![0; n];
-    let mut best_span = u64::MAX;
-    let mut current_positions = vec![0; n];
-    let mut placed = vec![false; n];
+    let mut positions = vec![0_u64; n];
+    let mut intervals = Vec::new();
 
-    fn interval_end(start: u64, size: u64) -> Option<u64> {
-        start.checked_add(size)
-    }
+    for i in 0..n {
+        intervals.clear();
 
-    fn search(
-        sizes: &[u64],
-        incomparable: &[Vec<bool>],
-        placed: &mut [bool],
-        current_positions: &mut [u64],
-        placed_count: usize,
-        current_span: u64,
-        best_span: &mut u64,
-        best_positions: &mut Vec<u64>,
-    ) {
-        if placed_count == sizes.len() {
-            if current_span < *best_span {
-                *best_span = current_span;
-                *best_positions = current_positions.to_vec();
-            }
-            return;
-        }
-
-        if current_span >= *best_span {
-            return;
-        }
-
-        for i in 0..sizes.len() {
-            if placed[i] {
-                continue;
-            }
-
-            let mut candidates = vec![0_u64];
-            for j in 0..sizes.len() {
-                if placed[j] && incomparable[i][j] {
-                    if let Some(end) = interval_end(current_positions[j], sizes[j]) {
-                        candidates.push(end);
-                    }
-                }
-            }
-            candidates.sort_unstable();
-            candidates.dedup();
-
-            for &start in &candidates {
-                let Some(end) = interval_end(start, sizes[i]) else {
+        for j in 0..i {
+            if incomparable[i][j] {
+                let Some(end) = positions[j].checked_add(sizes[j]) else {
                     continue;
                 };
-                if end >= *best_span {
-                    continue;
-                }
-
-                let mut valid = true;
-                for j in 0..sizes.len() {
-                    if placed[j] && incomparable[i][j] {
-                        let other_start = current_positions[j];
-                        let Some(other_end) = interval_end(other_start, sizes[j]) else {
-                            valid = false;
-                            break;
-                        };
-                        if start < other_end && other_start < end {
-                            valid = false;
-                            break;
-                        }
-                    }
-                }
-
-                if !valid {
-                    continue;
-                }
-
-                placed[i] = true;
-                current_positions[i] = start;
-                search(
-                    sizes,
-                    incomparable,
-                    placed,
-                    current_positions,
-                    placed_count + 1,
-                    current_span.max(end),
-                    best_span,
-                    best_positions,
-                );
-                placed[i] = false;
+                intervals.push((positions[j], end));
             }
         }
+
+        intervals.sort_unstable_by_key(|&(start, _)| start);
+
+        let mut start = 0_u64;
+        for (other_start, other_end) in intervals.iter().copied() {
+            let Some(end) = start.checked_add(sizes[i]) else {
+                break;
+            };
+            if end <= other_start {
+                break;
+            }
+            if start < other_end {
+                start = other_end;
+            }
+        }
+
+        positions[i] = start;
     }
 
-    search(
-        sizes,
-        &incomparable,
-        &mut placed,
-        &mut current_positions,
-        0,
-        0,
-        &mut best_span,
-        &mut best_positions,
-    );
-
-    best_positions
+    positions
 }
 
 #[cfg(test)]
@@ -152,6 +80,18 @@ mod tests {
         });
 
         assert_eq!(positions, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn total_order_30_elements_all_overlap() {
+        let sizes = vec![1_u64; 30];
+        let positions = pack_partial_order(&sizes, |a, b| match a.cmp(&b) {
+            Less => Some(Less),
+            Greater => Some(Greater),
+            _ => None,
+        });
+
+        assert_eq!(positions, vec![0; sizes.len()]);
     }
 
     #[test]

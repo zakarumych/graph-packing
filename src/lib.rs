@@ -193,4 +193,19 @@ mod tests {
         assert_eq!(positions[2], 10);
         assert_eq!(positions[3], 5);
     }
+
+    #[test]
+    fn total_order_packing_with_100_elements() {
+        let sizes = vec![1; 100];
+        let started = std::time::Instant::now();
+        let positions = pack_partial_order(&sizes, |a, b| match a.cmp(&b) {
+            Less => Some(Less),
+            Greater => Some(Greater),
+            _ => None,
+        });
+        let elapsed = started.elapsed();
+        eprintln!("total_order_packing_with_100_elements: {elapsed:?}");
+
+        assert_eq!(positions, vec![0; 100]);
+    }
 }

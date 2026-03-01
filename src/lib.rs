@@ -8,11 +8,14 @@ use core::cmp::Ordering;
 /// This implementation is exact: it explores all left-tight placements and
 /// returns one with the smallest maximal end position.
 ///
-/// Complexity:
-/// - Time: exponential in `sizes.len()` in the worst case (exact search), plus
-///   `O(n^2)` preprocessing for incomparability.
-/// - Space: `O(n^2)` for the incomparability matrix and `O(n)` for recursion
-///   state.
+/// Complexity (`n = sizes.len()`):
+/// - Time: exact backtracking over placements.
+///   - Worst-case upper bound: `O((n!)^2 * n^3)` (`n!` placement orders and up
+///     to `n!` candidate-start combinations, with `O(n^3)` work per node).
+///   - Typical fully-comparable/fully-incomparable cases are still factorial:
+///     `Θ(n! * n^2)` (one effective start candidate per step).
+///   - Plus `O(n^2)` preprocessing for incomparability.
+/// - Space: `O(n^2)` for the incomparability matrix and `O(n)` recursion/state.
 pub fn pack_partial_order<F>(sizes: &[u64], mut partial_order: F) -> Vec<u64>
 where
     F: FnMut(usize, usize) -> Option<Ordering>,

@@ -195,17 +195,42 @@ mod tests {
     }
 
     #[test]
-    fn total_order_packing_with_100_elements() {
-        let sizes = vec![1; 100];
-        let started = std::time::Instant::now();
-        let positions = pack_partial_order(&sizes, |a, b| match a.cmp(&b) {
-            Less => Some(Less),
-            Greater => Some(Greater),
-            _ => None,
-        });
-        let elapsed = started.elapsed();
-        eprintln!("total_order_packing_with_100_elements: {elapsed:?}");
+    #[ignore = "performance measurement; run with --ignored --nocapture"]
+    fn pseudorandom_100_elements_reports_execution_time() {
+        const DETERMINISTIC_SEED: u64 = 0x1234_5678_9ABC_DEF0;
+        const MIN_SIZE: u64 = 10;
+        const SIZE_RANGE: u64 = 991; // inclusive 10..=1000
 
-        assert_eq!(positions, vec![0; 100]);
+        let mut seed = DETERMINISTIC_SEED;
+        let mut next = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            seed
+        };
+        let sizes = (0..100)
+            .map(|_| MIN_SIZE + (next() % SIZE_RANGE))
+            .collect::<Vec<_>>();
+        assert!(sizes.windows(2).any(|w| w[0] != w[1]));
+        let ranks = (0..100).map(|_| next()).collect::<Vec<_>>();
+        let relation = |a: usize, b: usize| {
+            if a == b {
+                return None;
+            }
+            match ranks[a].cmp(&ranks[b]) {
+                Less => Some(Less),
+                Greater => Some(Greater),
+                _ => None,
+            }
+        };
+        for i in 0..ranks.len() {
+            for j in (i + 1)..ranks.len() {
+                assert!(relation(i, j).is_some());
+            }
+        }
+        let started = std::time::Instant::now();
+        let positions = pack_partial_order(&sizes, relation);
+        let elapsed = started.elapsed();
+        eprintln!("pseudorandom_100_elements_reports_execution_time: {elapsed:?}");
+
+        assert_eq!(positions, vec![0; sizes.len()]);
     }
 }

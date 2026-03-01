@@ -27,6 +27,10 @@ where
     let mut current_positions = vec![0; n];
     let mut placed = vec![false; n];
 
+    fn interval_end(start: u64, size: u64) -> Option<u64> {
+        start.checked_add(size)
+    }
+
     fn search(
         sizes: &[u64],
         incomparable: &[Vec<bool>],
@@ -57,14 +61,18 @@ where
             let mut candidates = vec![0_u64];
             for j in 0..sizes.len() {
                 if placed[j] && incomparable[i][j] {
-                    candidates.push(current_positions[j].saturating_add(sizes[j]));
+                    if let Some(end) = interval_end(current_positions[j], sizes[j]) {
+                        candidates.push(end);
+                    }
                 }
             }
             candidates.sort_unstable();
             candidates.dedup();
 
             for &start in &candidates {
-                let end = start.saturating_add(sizes[i]);
+                let Some(end) = interval_end(start, sizes[i]) else {
+                    continue;
+                };
                 if end >= *best_span {
                     continue;
                 }
@@ -73,7 +81,10 @@ where
                 for j in 0..sizes.len() {
                     if placed[j] && incomparable[i][j] {
                         let other_start = current_positions[j];
-                        let other_end = other_start.saturating_add(sizes[j]);
+                        let Some(other_end) = interval_end(other_start, sizes[j]) else {
+                            valid = false;
+                            break;
+                        };
                         if start < other_end && other_start < end {
                             valid = false;
                             break;
@@ -168,7 +179,7 @@ mod tests {
         let span = positions
             .iter()
             .zip(sizes)
-            .map(|(start, size)| start + size)
+            .map(|(start, size)| start.checked_add(size).unwrap_or(u64::MAX))
             .max()
             .unwrap_or(0);
 
